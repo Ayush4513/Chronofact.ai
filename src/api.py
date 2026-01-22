@@ -102,6 +102,13 @@ async def shutdown_event():
     # Qdrant client cleanup is automatic
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    """Return empty favicon to prevent 404 errors."""
+    from fastapi.responses import Response
+    return Response(content="", media_type="image/x-icon")
+
+
 @app.get("/", response_model=Dict[str, str])
 async def root() -> Dict[str, str]:
     """Root endpoint with API information."""
@@ -157,25 +164,53 @@ async def generate_timeline(request: QueryRequest) -> Timeline:
             filters["include_media_only"] = True
         
         # Generate timeline
-        timeline = builder.build_timeline(
-            query=request.topic,
-            limit=request.limit,
-            filters=filters if filters else None
-        )
-        
-        if timeline is None:
+        try:
+            timeline = await builder.build_timeline(
+                query=request.topic,
+                limit=request.limit,
+                filters=filters if filters else None
+            )
+            
+            if timeline is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Timeline builder returned None. Check backend logs for details."
+                )
+            
+            return timeline
+        except RuntimeError as e:
+            # Re-raise RuntimeError from timeline_builder with better context
+            logger.error(f"Timeline builder error: {e}")
             raise HTTPException(
                 status_code=500,
-                detail="Failed to generate timeline"
+                detail=f"Timeline generation failed: {str(e)}"
             )
         
-        return timeline
-        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Timeline generation error: {e}", exc_info=True)
+        # Provide more detailed error message
+        error_detail = str(e)
+        error_type = type(e).__name__
+        
+        # Add context based on error type
+        if "BAML" in error_detail or "baml" in error_detail.lower() or "coroutine" in error_detail.lower():
+            error_detail = f"BAML error: {error_detail}. Ensure BAML client is generated and functions are awaited."
+        elif "Qdrant" in error_detail or "qdrant" in error_detail.lower():
+            error_detail = f"Qdrant error: {error_detail}. Check Qdrant connection and data."
+        elif "API" in error_detail or "api" in error_detail.lower() or "key" in error_detail.lower():
+            error_detail = f"API error: {error_detail}. Check Google API key."
+        elif "timeout" in error_detail.lower():
+            error_detail = f"Timeout error: {error_detail}. The request took too long."
+        else:
+            # Include error type for debugging
+            error_detail = f"{error_type}: {error_detail}"
+        
         raise HTTPException(
             status_code=500,
-            detail=f"Error generating timeline: {str(e)}"
+            detail=f"Error generating timeline: {error_detail}"
         )
 
 

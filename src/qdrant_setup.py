@@ -141,28 +141,39 @@ def create_qdrant_client(config: Optional[AppConfig] = None) -> QdrantClient:
                 logger.warning("No storage path provided for local mode, using in-memory")
 
         elif mode == "docker":
-            # Docker container mode
+            # Docker container mode - no API key needed for local Docker
             protocol = "https" if qdrant_config.https else "http"
             url = f"{protocol}://{qdrant_config.host}:{qdrant_config.port}"
 
-            client = QdrantClient(
-                url=url,
-                api_key=qdrant_config.api_key,
-                timeout=qdrant_config.timeout,
-                prefer_grpc=True
-            )
+            # Docker Qdrant doesn't require API key for local connections
+            client_kwargs = {
+                "url": url,
+                "timeout": qdrant_config.timeout,
+                "prefer_grpc": True
+            }
+            # Only add API key if explicitly provided (for secured Docker setups)
+            if qdrant_config.api_key:
+                client_kwargs["api_key"] = qdrant_config.api_key
+            
+            client = QdrantClient(**client_kwargs)
             logger.info(f"Using Docker Qdrant at: {url}")
 
         elif mode == "cloud":
-            # Qdrant Cloud mode
+            # Qdrant Cloud mode - Core component for vector search
             if qdrant_config.url:
+                # Ensure URL has proper format
+                url = qdrant_config.url
+                if not url.startswith(("http://", "https://")):
+                    url = f"https://{url}"
+                
                 client = QdrantClient(
-                    url=qdrant_config.url,
+                    url=url,
                     api_key=qdrant_config.api_key,
                     timeout=qdrant_config.timeout,
-                    prefer_grpc=True
+                    prefer_grpc=True  # Use gRPC for better performance with Qdrant Cloud
                 )
-                logger.info(f"Using Qdrant Cloud at: {qdrant_config.url}")
+                logger.info(f"✅ Connected to Qdrant Cloud (Core Component) at: {url}")
+                logger.info("Qdrant is the primary vector search engine for Chronofact.ai")
             else:
                 raise ValueError("QDRANT_URL is required for cloud mode")
 

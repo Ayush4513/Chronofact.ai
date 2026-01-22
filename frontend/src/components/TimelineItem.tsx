@@ -62,26 +62,26 @@ export function TimelineItem({ event, index }: TimelineItemProps) {
 
   return (
     <div
-      className="relative pl-8 pb-8 last:pb-0 animate-in fade-in slide-in-from-bottom-2"
-      style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
+      className="relative pl-10 pb-8 last:pb-0"
+      style={{ animationDelay: `${index * 100}ms` }}
     >
-      {/* Timeline line */}
-      <div className="absolute left-[11px] top-3 bottom-0 w-px bg-border" />
+      {/* Timeline line with gradient */}
+      <div className="absolute left-[13.5px] top-7 bottom-0 w-0.5 bg-gradient-to-b from-blue-400/30 via-purple-400/30 to-transparent" />
 
       {/* Timeline dot */}
       <div
         className={cn(
-          "absolute left-0 top-1.5 w-6 h-6 rounded-full border-2 bg-background flex items-center justify-center",
-          credibility >= 0.7 && "border-emerald-500/50",
+          "absolute left-0 top-1.5 w-7 h-7 rounded-full border-2 bg-white dark:bg-slate-900 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform",
+          credibility >= 0.7 && "border-emerald-500/60 shadow-emerald-500/20",
           credibility >= 0.4 &&
             credibility < 0.7 &&
-            "border-amber-500/50",
-          credibility < 0.4 && "border-red-500/50"
+            "border-amber-500/60 shadow-amber-500/20",
+          credibility < 0.4 && "border-red-500/60 shadow-red-500/20"
         )}
       >
         <div
           className={cn(
-            "w-2 h-2 rounded-full",
+            "w-3 h-3 rounded-full ring-2 ring-white dark:ring-slate-900",
             credibility >= 0.7 && "bg-emerald-500",
             credibility >= 0.4 &&
               credibility < 0.7 &&
@@ -92,7 +92,7 @@ export function TimelineItem({ event, index }: TimelineItemProps) {
       </div>
 
       {/* Event card */}
-      <div className="bg-card/50 backdrop-blur-sm border border-border rounded-lg p-4 hover:border-border/80 transition-colors">
+      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border border-border/50 rounded-xl p-5 hover:border-blue-300/50 dark:hover:border-blue-700/50 hover:shadow-lg transition-all duration-300 group">
         <div className="flex items-start justify-between gap-4 mb-2">
           <span className={credibilityClass}>
             {credibilityPercent}% credible

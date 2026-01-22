@@ -9,8 +9,8 @@ import logging
 
 # Import BAML client (will be auto-generated)
 try:
-    from baml_client.sync_client import b
-    from baml_client.types import Timeline
+    from baml_client.baml_client import b
+    from baml_client.baml_client.types import Timeline
 except ImportError:
     b = None
     Timeline = None
@@ -47,7 +47,7 @@ class TimelineBuilder:
                 "Run 'uv run baml-cli generate' to generate client."
             )
     
-    def build_timeline(
+    async def build_timeline(
         self,
         query: str,
         limit: Optional[int] = None,
@@ -67,8 +67,9 @@ class TimelineBuilder:
             Timeline object or None if BAML client unavailable
         """
         if b is None:
-            logger.error("Cannot build timeline: BAML client not available")
-            return None
+            error_msg = "Cannot build timeline: BAML client not available. Run: uv run baml-cli generate"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
         
         if limit is None:
             limit = self.search_limit
@@ -77,7 +78,7 @@ class TimelineBuilder:
         
         try:
             # Step 1: Process query with BAML
-            processed = self._process_query(query)
+            processed = await self._process_query(query)
             logger.info(f"Processed query: {processed.rewritten_query}")
             
             # Step 2: Retrieve context from Qdrant
@@ -88,15 +89,27 @@ class TimelineBuilder:
             )
             
             if not context:
-                logger.warning("No context retrieved from Qdrant")
-                # Try ingesting mock data
-                if use_mock_data:
+                logger.warning("No context retrieved from Qdrant - attempting to ingest mock data")
+                # Auto-ingest mock data if none exists
+                try:
                     self._ingest_mock_data()
                     context = self._retrieve_context(
                         processed.rewritten_query,
                         filters,
                         limit * 3
                     )
+                except Exception as e:
+                    logger.error(f"Failed to ingest mock data: {e}")
+            
+            # If still no context, create a minimal context message
+            if not context:
+                logger.warning("No data available in Qdrant. Creating timeline with minimal context.")
+                context = [{
+                    "text": f"No specific data found for '{query}'. This is a placeholder timeline.",
+                    "author": "system",
+                    "timestamp": "2026-01-22T00:00:00Z",
+                    "credibility_score": 0.5
+                }]
             
             logger.info(f"Retrieved {len(context)} context items")
             
@@ -104,11 +117,32 @@ class TimelineBuilder:
             context_str = self._format_context(context)
             
             # Step 4: Generate timeline with BAML
-            timeline = b.GenerateTimeline(
-                query=processed.rewritten_query,
-                retrieved_context=context_str,
-                num_events=limit
-            )
+            try:
+                timeline = await b.GenerateTimeline(
+                    query=processed.rewritten_query,
+                    retrieved_context=context_str,
+                    num_events=limit
+                )
+            except Exception as baml_error:
+                logger.error(f"BAML GenerateTimeline error: {baml_error}", exc_info=True)
+                # Return a fallback timeline structure
+                from baml_client.baml_client.types import Timeline, Event
+                return Timeline(
+                    topic=query,
+                    events=[
+                        Event(
+                            timestamp="2026-01-22T00:00:00Z",
+                            summary=f"Timeline generation encountered an error. Original query: {query}",
+                            sources=[],
+                            media=None,
+                            credibility_score=0.0,
+                            verified_sources=0
+                        )
+                    ],
+                    total_sources=0,
+                    avg_credibility=0.0,
+                    predictions=None
+                )
             
             logger.info(f"Generated timeline with {len(timeline.events)} events")
             
@@ -116,9 +150,20 @@ class TimelineBuilder:
             
         except Exception as e:
             logger.error(f"Error building timeline: {e}", exc_info=True)
-            return None
+            # Log more details for debugging
+            logger.error(f"Query: {query}, Limit: {limit}, Filters: {filters}")
+            logger.error(f"BAML available: {b is not None}")
+            logger.error(f"Qdrant client available: {self.client is not None}")
+            if self.client:
+                try:
+                    collections = self.client.get_collections()
+                    logger.error(f"Qdrant collections: {[c.name for c in collections.collections]}")
+                except Exception as qe:
+                    logger.error(f"Failed to get collections: {qe}")
+            # Re-raise the exception with more context instead of returning None
+            raise RuntimeError(f"Failed to build timeline for query '{query}': {str(e)}") from e
     
-    def build_timeline_with_filters(
+    async def build_timeline_with_filters(
         self,
         query: str,
         filters: Dict[str, Any],
@@ -151,7 +196,7 @@ class TimelineBuilder:
         
         try:
             # Process query
-            processed = self._process_query(query)
+            processed = await self._process_query(query)
             
             # Retrieve filtered context
             context = self._retrieve_context(
@@ -163,7 +208,7 @@ class TimelineBuilder:
             context_str = self._format_context(context)
             
             # Generate timeline with filters
-            timeline = b.GenerateTimelineWithFilters(
+            timeline = await b.GenerateTimelineWithFilters(
                 query=processed.rewritten_query,
                 retrieved_context=context_str,
                 filters=filters,
@@ -217,7 +262,7 @@ class TimelineBuilder:
             logger.error(f"Error updating timeline: {e}", exc_info=True)
             return None
     
-    def compare_timelines(
+    async def compare_timelines(
         self,
         timeline1: Timeline,
         timeline2: Timeline
@@ -236,16 +281,16 @@ class TimelineBuilder:
             return None
         
         try:
-            comparison = b.CompareTimelines(timeline1, timeline2)
+            comparison = await b.CompareTimelines(timeline1, timeline2)
             return comparison
         except Exception as e:
             logger.error(f"Error comparing timelines: {e}", exc_info=True)
             return None
     
-    def _process_query(self, query: str):
+    async def _process_query(self, query: str):
         """Process query using BAML."""
         try:
-            return b.ProcessQuery(original_query=query)
+            return await b.ProcessQuery(original_query=query)
         except Exception as e:
             logger.warning(f"Query processing failed: {e}")
             # Return fallback processed query
@@ -285,21 +330,86 @@ class TimelineBuilder:
     def _ingest_mock_data(self) -> None:
         """Ingest mock data into Qdrant."""
         try:
+            from .ingestion import create_sample_mock_data, XDataIngestor
+            from .embeddings import get_embedding_model
+            from qdrant_client import models
+            import os
+            import hashlib
+            
+            # Create mock data file if it doesn't exist
+            if not os.path.exists(self.config.mock_data_path):
+                create_sample_mock_data(str(self.config.mock_data_path))
+            
+            # Load mock data
             ingestor = XDataIngestor(use_mock=True)
             df = ingestor.load_mock_data()
             
-            if not df.empty:
-                # Upsert to Qdrant
-                from .ingestion import create_sample_mock_data
-                import os
-                if not os.path.exists(self.config.mock_data_path):
-                    create_sample_mock_data(self.config.mock_data_path)
-                    df = ingestor.load_mock_data()
+            if df.empty:
+                logger.warning("Mock data file is empty")
+                return
+            
+            logger.info(f"Upserting {len(df)} mock records to Qdrant...")
+            
+            # Get embedding model
+            embedding_model = get_embedding_model()
+            
+            # Prepare points for upsert
+            points = []
+            for idx, row in df.iterrows():
+                # Generate embedding for text
+                text = str(row.get("text", ""))
+                if not text:
+                    continue
                 
-                # TODO: Implement actual upsert logic
-                logger.info(f"Loaded {len(df)} mock records")
+                embedding = embedding_model.encode(text)
+                
+                # Generate point ID from tweet_id
+                tweet_id = str(row.get("tweet_id", f"mock_{idx}"))
+                point_id = int(hashlib.md5(tweet_id.encode()).hexdigest()[:8], 16)
+                
+                # Parse media_urls if it's a string
+                media_urls = row.get("media_urls", "[]")
+                if isinstance(media_urls, str):
+                    try:
+                        import ast
+                        media_urls = ast.literal_eval(media_urls)
+                    except:
+                        media_urls = []
+                
+                # Create payload
+                payload = {
+                    "tweet_id": tweet_id,
+                    "text": text,
+                    "author": str(row.get("author", "unknown")),
+                    "timestamp": str(row.get("timestamp", "")),
+                    "fave_count": int(row.get("fave_count", 0)),
+                    "retweet_count": int(row.get("retweet_count", 0)),
+                    "is_verified": bool(row.get("is_verified", False)),
+                    "media_urls": media_urls if isinstance(media_urls, list) else [],
+                    "location": str(row.get("location", "")) if row.get("location") else None,
+                    "credibility_score": float(row.get("credibility_score", 0.5))
+                }
+                
+                points.append(
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload=payload
+                    )
+                )
+            
+            # Upsert to Qdrant
+            if points and self.client:
+                self.client.upsert(
+                    collection_name=self.config.collection_posts,
+                    points=points
+                )
+                logger.info(f"✅ Successfully upserted {len(points)} mock records to Qdrant")
+            else:
+                logger.warning("No points to upsert or Qdrant client unavailable")
+                
         except Exception as e:
-            logger.error(f"Error ingesting mock data: {e}")
+            logger.error(f"Error ingesting mock data: {e}", exc_info=True)
 
 
 def create_timeline(

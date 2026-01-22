@@ -262,7 +262,7 @@ class TestTimelineBuilder:
     def test_query_processing(self):
         """Test query processing."""
         try:
-            from baml_client.sync_client import b
+            from baml_client.baml_client import b
         except ImportError:
             pytest.skip("BAML client not available")
         

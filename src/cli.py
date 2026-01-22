@@ -264,10 +264,83 @@ def ingest(
     typer.echo(f"\n📥 Ingesting data from: {source}\n")
     
     if source == "mock":
-        from .ingestion import create_sample_mock_data
+        from .ingestion import create_sample_mock_data, XDataIngestor
+        from .qdrant_setup import create_qdrant_client
+        from .embeddings import get_embedding_model
+        from qdrant_client import models
+        import hashlib
+        
         output_path = output or "./data/sample_x_data.csv"
         create_sample_mock_data(output_path)
         typer.echo(f"✅ Created: {output_path}")
+        
+        # Now upsert to Qdrant
+        typer.echo("\n📤 Upserting mock data to Qdrant...")
+        try:
+            from .config import get_config
+            config = get_config()
+            client = create_qdrant_client(config)
+            ingestor = XDataIngestor(use_mock=True)
+            df = ingestor.load_mock_data(output_path)
+            
+            if df.empty:
+                typer.echo("❌ No data to upsert", err=True)
+                return
+            
+            embedding_model = get_embedding_model()
+            points = []
+            
+            for idx, row in df.iterrows():
+                text = str(row.get("text", ""))
+                if not text:
+                    continue
+                
+                embedding = embedding_model.encode(text)
+                tweet_id = str(row.get("tweet_id", f"mock_{idx}"))
+                point_id = int(hashlib.md5(tweet_id.encode()).hexdigest()[:8], 16)
+                
+                import ast
+                media_urls = row.get("media_urls", "[]")
+                if isinstance(media_urls, str):
+                    try:
+                        media_urls = ast.literal_eval(media_urls)
+                    except:
+                        media_urls = []
+                
+                payload = {
+                    "tweet_id": tweet_id,
+                    "text": text,
+                    "author": str(row.get("author", "unknown")),
+                    "timestamp": str(row.get("timestamp", "")),
+                    "fave_count": int(row.get("fave_count", 0)),
+                    "retweet_count": int(row.get("retweet_count", 0)),
+                    "is_verified": bool(row.get("is_verified", False)),
+                    "media_urls": media_urls if isinstance(media_urls, list) else [],
+                    "location": str(row.get("location", "")) if row.get("location") else None,
+                    "credibility_score": float(row.get("credibility_score", 0.5))
+                }
+                
+                points.append(
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload=payload
+                    )
+                )
+            
+            if points:
+                client.upsert(
+                    collection_name=config.collection_posts,
+                    points=points
+                )
+                typer.echo(f"✅ Upserted {len(points)} records to Qdrant collection 'x_posts'")
+            else:
+                typer.echo("❌ No valid points to upsert", err=True)
+                
+        except Exception as e:
+            typer.echo(f"❌ Error upserting to Qdrant: {e}", err=True)
+            import traceback
+            traceback.print_exc()
     
     elif source == "scrape":
         if not topic:

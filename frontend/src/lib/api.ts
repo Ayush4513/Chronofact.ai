@@ -65,7 +65,7 @@ export interface RecommendRequest {
   limit: number;
 }
 
-class XTimelineAPI {
+class ChronofactAPI {
   private baseUrl: string;
 
   constructor(baseUrl: string = API_BASE) {
@@ -96,14 +96,25 @@ class XTimelineAPI {
   }
 
   async healthCheck() {
-    return this.request<{
-      status: string;
-      baml_available: boolean;
-      qdrant_connected: boolean;
-    }>('/health');
+    // Health endpoint is at /health (proxied by frontend server)
+    try {
+      const response = await fetch('/health');
+      if (!response.ok) {
+        throw new Error('Health check failed');
+      }
+      return await response.json() as {
+        status: string;
+        baml_available: boolean;
+        qdrant_connected: boolean;
+      };
+    } catch (error) {
+      console.error('Health check error:', error);
+      throw error;
+    }
   }
 
   async generateTimeline(request: QueryRequest): Promise<Timeline> {
+    // Timeline endpoint is at /api/timeline
     return this.request<Timeline>('/timeline', {
       method: 'POST',
       body: JSON.stringify(request),
@@ -140,5 +151,5 @@ class XTimelineAPI {
   }
 }
 
-export const api = new XTimelineAPI();
-export default XTimelineAPI;
+export const api = new ChronofactAPI();
+export default ChronofactAPI;
