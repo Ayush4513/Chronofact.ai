@@ -578,7 +578,9 @@ export function App() {
 
   const handleSearch = async (searchQuery?: string) => {
     const queryToUse = searchQuery || query;
-    if (!queryToUse.trim()) return;
+    
+    // Allow search if there's text OR an image
+    if (!queryToUse.trim() && !selectedImage) return;
     
     // Update query if using a follow-up question
     if (searchQuery) {
@@ -593,9 +595,12 @@ export function App() {
     setFollowUpQuestions([]);
 
     try {
+      // Use default topic if only image provided
+      const effectiveTopic = queryToUse.trim() || "Analyze uploaded image";
+      
       // Prepare request with optional image
       const request: { topic: string; limit: number; image_base64?: string } = {
-        topic: queryToUse,
+        topic: effectiveTopic,
         limit,
       };
 
@@ -611,9 +616,9 @@ export function App() {
       const result = await api.generateTimeline(request);
       setTimeline(result);
       if (result.events && result.events.length > 0) {
-        await runAnalysis(queryToUse);
+        await runAnalysis(effectiveTopic);
         // Generate follow-up questions after timeline is ready
-        await fetchFollowUpQuestions(queryToUse, result);
+        await fetchFollowUpQuestions(effectiveTopic, result);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate timeline");
@@ -814,7 +819,7 @@ export function App() {
                     placeholder="e.g., 'Mumbai elections 2024', 'Silicon Valley tech layoffs'"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSearch(undefined)}
+                    onKeyDown={(e) => e.key === "Enter" && (query.trim() || selectedImage) && handleSearch(undefined)}
                     className="w-full pl-12 pr-4 py-4 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all"
                   />
                 </div>
@@ -830,7 +835,7 @@ export function App() {
                   <motion.button
                     type="button"
                     onClick={() => handleSearch(undefined)}
-                    disabled={loading || !query.trim()}
+                    disabled={loading || (!query.trim() && !selectedImage)}
                     className={cn(
                       "px-6 py-4 rounded-xl font-semibold flex items-center gap-2 transition-all",
                       "bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500",
@@ -848,7 +853,7 @@ export function App() {
                     ) : (
                       <>
                         <Zap className="h-5 w-5" />
-                        <span className="hidden md:inline">Generate Timeline</span>
+                        <span className="hidden md:inline">{selectedImage && !query.trim() ? "Analyze Image" : "Generate Timeline"}</span>
                       </>
                     )}
                   </motion.button>
