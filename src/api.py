@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
-    logger.info("Starting Chronofact.ai API...")
+    import os
+    port = os.getenv("PORT", "8000")
+    logger.info(f"Starting Chronofact.ai API on PORT={port}...")
     
     try:
         config = get_config()
