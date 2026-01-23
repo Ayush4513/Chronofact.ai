@@ -181,20 +181,26 @@ async def root() -> Dict[str, str]:
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """Health check endpoint."""
+    """Health check endpoint - returns status even during partial initialization."""
     qdrant_connected = False
+    baml_available = False
+    multimodal_available = False
     
+    # Safe checks with getattr to avoid crashes during initialization
     try:
-        app.state.qdrant_client.get_collections()
-        qdrant_connected = True
+        qdrant_client = getattr(app.state, 'qdrant_client', None)
+        if qdrant_client:
+            qdrant_client.get_collections()
+            qdrant_connected = True
     except Exception as e:
         logger.warning(f"Qdrant health check failed: {e}")
     
+    baml_available = getattr(app.state, 'baml_available', False)
     multimodal_available = getattr(app.state, 'multimodal_available', False)
     
     return HealthResponse(
-        status="healthy" if qdrant_connected else "degraded",
-        baml_available=app.state.baml_available,
+        status="healthy" if qdrant_connected else "starting",
+        baml_available=baml_available,
         qdrant_connected=qdrant_connected,
         multimodal_available=multimodal_available
     )
