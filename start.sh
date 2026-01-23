@@ -240,7 +240,14 @@ if [ ! -d "$PROJECT_DIR/frontend/node_modules" ]; then
     bun install
 fi
 
-bun run server.ts &
+# Build frontend if dist doesn't exist
+if [ ! -d "$PROJECT_DIR/frontend/dist" ]; then
+    echo -e "${YELLOW}🔨 Building frontend...${NC}"
+    bun run build
+    echo -e "${GREEN}✅ Frontend built${NC}"
+fi
+
+bun server.ts &
 FRONTEND_PID=$!
 
 echo ""
