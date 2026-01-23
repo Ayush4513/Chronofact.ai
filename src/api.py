@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     
     try:
         config = get_config()
-        logger.info(f"Config loaded: QDRANT_MODE={config.QDRANT_MODE}")
+        logger.info(f"Config loaded: QDRANT_MODE={config.qdrant.mode}")
         
         # Setup Qdrant with error handling
         try:
