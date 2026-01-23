@@ -11,35 +11,57 @@ AI-powered fact-based timeline generator that builds accurate, verifiable event 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Live Demo:** https://chronofact-ai.onrender.com
+**🚀 Live Demo:** https://chronofact-ai.onrender.com
 
 > Built for Qdrant Convolve 4.0
 
 ---
 
-## Quick Start (Git Bash)
+## 🎯 Two Ways to Run
+
+### Option 1: Quick Local Setup (3 Steps)
 
 ```bash
-# 1. Clone and enter directory
+# 1. Clone the repository
 git clone https://github.com/Ayush4513/Chronofact.ai.git
 cd Chronofact.ai
 
-# 2. Create .env file with your API keys
-cat > .env << 'EOF'
-GOOGLE_API_KEY=your-google-api-key-here
-QDRANT_MODE=cloud
-QDRANT_URL=https://your-qdrant-cloud-url.qdrant.io:6333
-QDRANT_API_KEY=your-qdrant-api-key-here
-EOF
+# 2. Setup environment variables
+cp env.template .env
+# Edit .env with your API keys:
+#   - GOOGLE_API_KEY (get from https://makersuite.google.com/app/apikey)
+#   - QDRANT_URL and QDRANT_API_KEY (get from https://cloud.qdrant.io)
 
-# 3. Run the application
+# 3. Run everything with one command
 ./start.sh
 ```
 
-**That's it!** The app will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+**✅ Done!** Access your app:
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+The `start.sh` script automatically:
+- ✅ Installs all dependencies (Python, Node.js packages)
+- ✅ Generates BAML client
+- ✅ Initializes Qdrant collections
+- ✅ Ingests sample data
+- ✅ Starts both frontend and backend
+
+### Option 2: Deploy to Render (Production)
+
+1. **Fork this repository** on GitHub
+2. **Connect to Render**:
+   - Go to https://render.com
+   - Click "New" → "Blueprint"
+   - Connect your forked repository
+3. **Set Environment Variables** in Render Dashboard:
+   - `GOOGLE_API_KEY`
+   - `QDRANT_URL`
+   - `QDRANT_API_KEY`
+4. **Deploy!** Render auto-builds and deploys from `render.yaml`
+
+**🌐 Your app will be live at**: `https://your-app-name.onrender.com`
 
 ---
 
@@ -308,10 +330,12 @@ cd frontend && bun server.ts
 | `./start.sh: Permission denied` | Run `chmod +x start.sh` |
 | `uv: command not found` | Install: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | `bun: command not found` | Install: `curl -fsSL https://bun.sh/install \| bash` |
-| Port 3000/8000 in use | Kill process: `lsof -ti:3000 \| xargs kill -9` |
-| BAML errors | Regenerate: `uv run baml-cli generate` |
+| Port 3000/8000 in use | Kill process: `lsof -ti:3000 \| xargs kill -9` (Mac/Linux) or `netstat -ano \| findstr :3000` (Windows) |
+| BAML client not available | `uv sync && uv run baml-cli generate` |
+| BAML version mismatch | `uv add baml-py==0.218.0 && uv run baml-cli generate` |
 | Blank frontend | Rebuild: `cd frontend && bun run build` |
 | API connection failed | Check `.env` has correct API keys |
+| Config attribute error | Verify `config.qdrant.mode` not `config.QDRANT_MODE` |
 
 ### View Backend Logs
 
