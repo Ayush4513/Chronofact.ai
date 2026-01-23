@@ -6,11 +6,8 @@ services:
   - type: web
     name: chronofact-api
     runtime: python
-    buildCommand: |
-      pip install uv
-      uv sync
-      uv run baml-cli generate
-    startCommand: uv run python -m src.api
+    buildCommand: pip install -r requirements.txt && pip install baml-py && baml-cli generate
+    startCommand: python -m src.api
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
