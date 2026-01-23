@@ -12,19 +12,22 @@ RUN apt-get update && apt-get install -y \
 
 # Install uv package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:$PATH"
+
+# Add uv to PATH
+ENV PATH="/root/.local/bin:$PATH"
 
 # Copy project files
 COPY pyproject.toml uv.lock ./
 COPY baml_src/ ./baml_src/
 COPY src/ ./src/
 COPY data/ ./data/
+COPY config/ ./config/
 
 # Install dependencies
-RUN uv sync
+RUN /root/.local/bin/uv sync
 
 # Generate BAML client
-RUN uv run baml-cli generate
+RUN /root/.local/bin/uv run baml-cli generate
 
 # Expose port
 EXPOSE 8000
@@ -34,5 +37,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Start the application
-CMD ["uv", "run", "python", "-m", "src.api"]
-
+CMD ["/root/.local/bin/uv", "run", "python", "-m", "src.api"]
