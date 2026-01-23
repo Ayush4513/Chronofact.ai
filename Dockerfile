@@ -8,26 +8,29 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv package manager
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Copy requirements first for caching
+COPY pyproject.toml ./
 
-# Add uv to PATH
-ENV PATH="/root/.local/bin:$PATH"
+# Install Python dependencies using pip
+RUN pip install --upgrade pip && \
+    pip install baml-py fastapi uvicorn[standard] \
+    qdrant-client sentence-transformers \
+    typer pandas numpy python-dotenv \
+    openai pydantic httpx Pillow requests \
+    google-generativeai datasets PyYAML \
+    selenium webdriver-manager
 
 # Copy project files
-COPY pyproject.toml uv.lock ./
 COPY baml_src/ ./baml_src/
 COPY src/ ./src/
 COPY data/ ./data/
 COPY config/ ./config/
 
-# Install dependencies
-RUN /root/.local/bin/uv sync
-
 # Generate BAML client
-RUN /root/.local/bin/uv run baml-cli generate
+RUN baml-cli generate
 
 # Expose port
 EXPOSE 8000
@@ -37,4 +40,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Start the application
-CMD ["/root/.local/bin/uv", "run", "python", "-m", "src.api"]
+CMD ["python", "-m", "src.api"]
