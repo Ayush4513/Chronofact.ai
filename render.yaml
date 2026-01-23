@@ -1,0 +1,47 @@
+# Render Blueprint - Chronofact.ai
+# This file defines the infrastructure for automatic deployment
+
+services:
+  # Backend API Service
+  - type: web
+    name: chronofact-api
+    runtime: python
+    buildCommand: |
+      pip install uv
+      uv sync
+      uv run baml-cli generate
+    startCommand: uv run python -m src.api
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: GOOGLE_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: QDRANT_MODE
+        value: cloud
+      - key: QDRANT_URL
+        sync: false  # Set manually in Render dashboard
+      - key: QDRANT_API_KEY
+        sync: false  # Set manually in Render dashboard
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Frontend Service
+  - type: web
+    name: chronofact-frontend
+    runtime: node
+    buildCommand: |
+      cd frontend
+      npm install -g bun
+      bun install
+      bun run build
+    startCommand: cd frontend && bun server.ts
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: API_URL
+        fromService:
+          name: chronofact-api
+          type: web
+          property: host
+    autoDeploy: true
+

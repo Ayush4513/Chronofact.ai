@@ -2,9 +2,10 @@ import { file, serve } from "bun";
 import { join } from "path";
 
 const distDir = join(import.meta.dir, "dist");
-const port = 3000;
+const port = parseInt(process.env.PORT || "3000");
+const apiUrl = process.env.API_URL || "http://localhost:8000";
 
-console.log(`🚀 Frontend server starting on http://localhost:${port}`);
+console.log(`🚀 Frontend server starting on port ${port}`);
 
 serve({
   port,
@@ -44,7 +45,7 @@ serve({
     
     // Proxy API requests to backend
     if (pathname.startsWith("/api/") || pathname === "/health") {
-      const backendUrl = `http://localhost:8000${pathname}${url.search}`;
+      const backendUrl = `${apiUrl}${pathname}${url.search}`;
       try {
         const response = await fetch(backendUrl, {
           method: req.method,
@@ -76,6 +77,6 @@ serve({
   },
 });
 
-console.log(`✅ Frontend running at http://localhost:${port}`);
-console.log(`   Proxying /api/* to http://localhost:8000`);
+console.log(`✅ Frontend running on port ${port}`);
+console.log(`   Proxying /api/* to ${apiUrl}`);
 
