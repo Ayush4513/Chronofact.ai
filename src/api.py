@@ -543,11 +543,15 @@ async def search_posts(
 
 if __name__ == "__main__":
     import uvicorn
+    import os
+    
+    # Get port from environment variable (Render uses PORT env var)
+    port = int(os.getenv("PORT", "8000"))
     
     uvicorn.run(
         "src.api:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        reload=False,  # Disable reload in production
         log_level="info"
     )
