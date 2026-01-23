@@ -4,6 +4,11 @@ FastAPI endpoints for timeline generation and verification.
 Supports multimodal queries with text and images.
 """
 
+import sys
+print("=" * 60, file=sys.stderr)
+print("🚀 Chronofact.ai API Module Loading...", file=sys.stderr)
+print("=" * 60, file=sys.stderr)
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +33,12 @@ from .config import get_config
 from .timeline_builder import TimelineBuilder
 from .qdrant_setup import create_qdrant_client
 
+# Configure logging to stdout for Render
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -37,33 +48,50 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Chronofact.ai API...")
     
-    config = get_config()
-    
-    # Setup Qdrant
-    app.state.qdrant_client = create_qdrant_client(config)
-    app.state.timeline_builder = TimelineBuilder(
-        app.state.qdrant_client
-    )
-    
-    # Setup multimodal embedder
     try:
-        from .multimodal import MultimodalEmbedder
-        app.state.multimodal_embedder = MultimodalEmbedder()
-        app.state.multimodal_available = True
-        logger.info("Multimodal embedder (CLIP) loaded successfully")
+        config = get_config()
+        logger.info(f"Config loaded: QDRANT_MODE={config.QDRANT_MODE}")
+        
+        # Setup Qdrant with error handling
+        try:
+            app.state.qdrant_client = create_qdrant_client(config)
+            app.state.timeline_builder = TimelineBuilder(
+                app.state.qdrant_client
+            )
+            logger.info("Qdrant client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Qdrant: {e}")
+            app.state.qdrant_client = None
+            app.state.timeline_builder = None
+        
+        # Setup multimodal embedder
+        try:
+            from .multimodal import MultimodalEmbedder
+            app.state.multimodal_embedder = MultimodalEmbedder()
+            app.state.multimodal_available = True
+            logger.info("Multimodal embedder (CLIP) loaded successfully")
+        except Exception as e:
+            logger.warning(f"Multimodal embedder not available: {e}")
+            app.state.multimodal_embedder = None
+            app.state.multimodal_available = False
+        
+        if b is None:
+            logger.warning("BAML client not available. Run: baml-cli generate")
+            app.state.baml_available = False
+        else:
+            logger.info("BAML client loaded successfully")
+            app.state.baml_available = True
+        
+        logger.info("API startup complete")
+        
     except Exception as e:
-        logger.warning(f"Multimodal embedder not available: {e}")
+        logger.error(f"Startup error: {e}", exc_info=True)
+        # Set minimal state to allow app to start
+        app.state.qdrant_client = None
+        app.state.timeline_builder = None
         app.state.multimodal_embedder = None
         app.state.multimodal_available = False
-    
-    if b is None:
-        logger.warning("BAML client not available. Run: uv run baml-cli generate")
         app.state.baml_available = False
-    else:
-        logger.info("BAML client loaded successfully")
-        app.state.baml_available = True
-    
-    logger.info("API startup complete")
     
     yield  # App runs here
     
