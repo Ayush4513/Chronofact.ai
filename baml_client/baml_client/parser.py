@@ -42,6 +42,12 @@ class LlmResponseParser:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ExtractEntities", llm_response=llm_response, mode="request")
         return typing.cast(typing.List[str], __result__)
 
+    def GenerateFollowUpQuestions(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> typing.List["types.FollowUpQuestion"]:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="GenerateFollowUpQuestions", llm_response=llm_response, mode="request")
+        return typing.cast(typing.List["types.FollowUpQuestion"], __result__)
+
     def GenerateRecommendations(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.List["types.Recommendation"]:
@@ -91,6 +97,12 @@ class LlmStreamParser:
     ) -> typing.List[str]:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ExtractEntities", llm_response=llm_response, mode="stream")
         return typing.cast(typing.List[str], __result__)
+
+    def GenerateFollowUpQuestions(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> typing.List["stream_types.FollowUpQuestion"]:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="GenerateFollowUpQuestions", llm_response=llm_response, mode="stream")
+        return typing.cast(typing.List["stream_types.FollowUpQuestion"], __result__)
 
     def GenerateRecommendations(
         self, llm_response: str, baml_options: BamlCallOptions = {},

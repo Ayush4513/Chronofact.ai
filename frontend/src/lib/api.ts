@@ -42,12 +42,30 @@ export interface Recommendation {
   reason: string;
 }
 
+export interface FollowUpQuestion {
+  question: string;
+  category: 'deep_dive' | 'related_topic' | 'verification' | 'prediction' | 'comparison';
+  context_hint: string;
+  priority: number;
+}
+
+export interface FollowUpRequest {
+  original_query: string;
+  timeline_topic: string;
+  events_summary: string[];
+  avg_credibility: number;
+  total_events: number;
+  total_sources: number;
+  previous_questions?: string[];
+}
+
 export interface QueryRequest {
   topic: string;
   limit: number;
   location?: string;
   min_credibility?: number;
   include_media_only?: boolean;
+  image_base64?: string;
 }
 
 export interface VerifyRequest {
@@ -141,6 +159,17 @@ class ChronofactAPI {
     recommendations: Recommendation[];
   }> {
     return this.request('/recommend', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getFollowUpQuestions(request: FollowUpRequest): Promise<{
+    query: string;
+    count: number;
+    questions: FollowUpQuestion[];
+  }> {
+    return this.request('/followup', {
       method: 'POST',
       body: JSON.stringify(request),
     });

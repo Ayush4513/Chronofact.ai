@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (10)
+# Generated classes (11)
 # #########################################################################
 
 class CredibilityAssessment(BaseModel):
@@ -39,6 +39,12 @@ class Event(BaseModel):
     media: typing.Optional[str] = Field(default=None, description='Optional image or video URL associated with event')
     credibility_score: typing.Optional[float] = Field(default=None, description='0.0 to 1.0, higher is more credible')
     verified_sources: typing.Optional[int] = Field(default=None, description='Number of sources verified against knowledge base')
+
+class FollowUpQuestion(BaseModel):
+    question: typing.Optional[str] = Field(default=None, description='A natural follow-up question to continue the conversation')
+    category: typing.Optional[str] = Field(default=None, description='Category: \'deep_dive\', \'related_topic\', \'verification\', \'prediction\', \'comparison\'')
+    context_hint: typing.Optional[str] = Field(default=None, description='Brief hint about what this question explores')
+    priority: typing.Optional[int] = Field(default=None, description='Priority 1-5, where 1 is most relevant')
 
 class KnowledgeFact(BaseModel):
     fact_id: typing.Optional[str] = Field(default=None, description='Unique identifier for this fact')

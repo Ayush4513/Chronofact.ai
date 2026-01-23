@@ -25,6 +25,10 @@ dependencies = [
     # Multimodal support
     "Pillow>=10.0.0",
     "requests>=2.31.0",
+    # Legal data collection
+    "datasets>=2.16.0",
+    "google-generativeai>=0.3.0",
+    "PyYAML>=6.0.0",
 ]
 
 [project.optional-dependencies]

@@ -22,6 +22,9 @@ type_map = {
     "types.Event": types.Event,
     "stream_types.Event": stream_types.Event,
 
+    "types.FollowUpQuestion": types.FollowUpQuestion,
+    "stream_types.FollowUpQuestion": stream_types.FollowUpQuestion,
+
     "types.KnowledgeFact": types.KnowledgeFact,
     "stream_types.KnowledgeFact": stream_types.KnowledgeFact,
 

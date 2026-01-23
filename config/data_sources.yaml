@@ -1,0 +1,94 @@
+# Chronofact.ai - Data Sources Configuration
+# All sources are 100% legal for hackathon demonstration
+
+# Legal Data Sources
+legal_sources:
+  # Academic datasets from HuggingFace (publicly available for research)
+  academic_datasets:
+    enabled: true
+    datasets:
+      - name: disaster
+        huggingface_id: "fancyzhx/disaster_tweets_classification"
+        license: "MIT"
+        description: "Disaster tweets classification dataset"
+      
+      - name: news
+        huggingface_id: "cardiffnlp/tweet_topic_single"
+        license: "CC BY 4.0"
+        description: "Tweet topic classification"
+      
+      - name: sentiment
+        huggingface_id: "cardiffnlp/tweet_sentiment_multilingual"
+        license: "CC BY 4.0"
+        description: "Multilingual tweet sentiment"
+  
+  # Synthetic generation using LLM (100% legal)
+  synthetic_generation:
+    enabled: true
+    model: "gemini-1.5-flash"
+    use_for_percentage: 30  # Use LLM for 30% of synthetic tweets
+    fallback_to_templates: true
+  
+  # Event-focused data (based on public historical records)
+  event_focus:
+    enabled: true
+    available_events:
+      - mumbai_floods_2024
+      - indian_elections_2024
+      - tech_layoffs_2024
+      - climate_extreme_2024
+
+# Stock Image Sources (all legal for demonstration)
+image_sources:
+  unsplash:
+    enabled: true
+    base_url: "https://source.unsplash.com"
+    size: "800x600"
+    attribution: "Photos from Unsplash"
+  
+  # Topic-based image keywords
+  topic_keywords:
+    disaster: ["flood", "rain", "emergency", "rescue"]
+    election: ["election", "voting", "democracy", "crowd"]
+    tech: ["technology", "office", "computer", "startup"]
+    health: ["hospital", "healthcare", "medical"]
+    weather: ["storm", "clouds", "weather"]
+
+# Collection Strategies
+strategies:
+  auto:
+    description: "Automatically select best source based on query"
+  
+  academic:
+    description: "Use only academic datasets"
+    primary_source: academic_datasets
+  
+  synthetic:
+    description: "Generate all synthetic data"
+    primary_source: synthetic_generation
+  
+  event:
+    description: "Use event-focused generation"
+    primary_source: event_focus
+  
+  hybrid:
+    description: "Mix all sources for best results"
+    distribution:
+      event: 40
+      synthetic: 30
+      academic: 30
+
+# Legal Compliance
+compliance:
+  twitter_tos_compliant: true
+  data_usage: "demonstration_only"
+  redistribution_allowed: false
+  attribution_required: true
+  
+  notices:
+    - "All data is for demonstration purposes only"
+    - "Academic datasets used under their respective licenses"
+    - "Synthetic data clearly marked as AI-generated"
+    - "Stock images from Unsplash (free to use)"
+    - "No real Twitter API access or scraping"
+

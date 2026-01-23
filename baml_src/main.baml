@@ -28,6 +28,13 @@ class Recommendation {
   reason string @description("Why this recommendation is being made")
 }
 
+class FollowUpQuestion {
+  question string @description("A natural follow-up question to continue the conversation")
+  category string @description("Category: 'deep_dive', 'related_topic', 'verification', 'prediction', 'comparison'")
+  context_hint string @description("Brief hint about what this question explores")
+  priority int @description("Priority 1-5, where 1 is most relevant")
+}
+
 class SessionMemory {
   session_id string @description("Unique session identifier")
   query string @description("The query that was made")
@@ -320,5 +327,85 @@ function GenerateRecommendations(query: string, timeline: Timeline?, user_sessio
     Return as an array of Recommendation objects, each with:
     - action: Specific action or follow-up query
     - reason: Why this is being recommended
+  "#
+}
+
+function GenerateFollowUpQuestions(
+  original_query: string, 
+  timeline_summary: string,
+  key_events: string[],
+  entities_found: string[],
+  credibility_summary: string,
+  previous_questions: string[]?
+) -> FollowUpQuestion[] {
+  client GeminiFlash
+  prompt #"
+    You are a smart research assistant helping a user investigate a topic through an AI-powered timeline generator.
+    
+    The user just searched for: "{{ original_query }}"
+    
+    TIMELINE GENERATED:
+    {{ timeline_summary }}
+    
+    KEY EVENTS FOUND:
+    {% for event in key_events %}
+    - {{ event }}
+    {% endfor %}
+    
+    ENTITIES IDENTIFIED:
+    {% for entity in entities_found %}
+    - {{ entity }}
+    {% endfor %}
+    
+    CREDIBILITY SUMMARY:
+    {{ credibility_summary }}
+    
+    {% if previous_questions %}
+    QUESTIONS ALREADY ASKED (avoid repetition):
+    {% for q in previous_questions %}
+    - {{ q }}
+    {% endfor %}
+    {% endif %}
+    
+    Generate 4-6 intelligent follow-up questions that will help the user:
+    1. Dig deeper into the most interesting or unclear aspects
+    2. Explore related but different angles
+    3. Verify claims that need more investigation
+    4. Understand cause-effect relationships
+    5. Compare with similar events or situations
+    
+    QUESTION CATEGORIES:
+    - deep_dive: Questions that explore specific events or details in depth
+    - related_topic: Questions about connected events, people, or themes
+    - verification: Questions aimed at fact-checking specific claims
+    - prediction: Questions about what might happen next or consequences
+    - comparison: Questions comparing this to similar situations
+    
+    RULES FOR GOOD QUESTIONS:
+    1. Questions must be directly related to the timeline content
+    2. Questions should be specific, not generic
+    3. Questions should lead to actionable timeline generation
+    4. Questions should feel like a natural conversation continuation
+    5. Mix different categories for variety
+    6. Prioritize questions that would reveal new, interesting information
+    
+    Examples of GOOD questions:
+    - "What were the government's immediate responses to the flooding?"
+    - "How did this compare to the 2023 Mumbai floods?"
+    - "Which areas were most affected and why?"
+    - "What role did infrastructure failures play?"
+    
+    Examples of BAD questions (too generic):
+    - "What happened?"
+    - "Is this true?"
+    - "Tell me more"
+    
+    Return 4-6 FollowUpQuestion objects, each with:
+    - question: The natural language question
+    - category: One of 'deep_dive', 'related_topic', 'verification', 'prediction', 'comparison'
+    - context_hint: Brief 5-10 word hint about what this explores
+    - priority: 1-5 (1 = most relevant/interesting)
+    
+    Sort by priority (most relevant first).
   "#
 }

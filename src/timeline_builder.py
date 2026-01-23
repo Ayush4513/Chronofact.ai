@@ -1,10 +1,11 @@
 """
 Chronofact.ai - Timeline Builder Module
 Builds timelines using BAML functions and Qdrant search.
+Supports multimodal queries (text + images).
 """
 
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 import logging
 
 # Import BAML client (will be auto-generated)
@@ -21,25 +22,50 @@ from .ingestion import XDataIngestor
 
 logger = logging.getLogger(__name__)
 
+# Optional multimodal imports
+try:
+    from .multimodal_processor import MultimodalTweetProcessor
+    from .multimodal import get_multimodal_embedder
+    MULTIMODAL_AVAILABLE = True
+except ImportError:
+    MULTIMODAL_AVAILABLE = False
+    logger.debug("Multimodal processing not available")
+
 
 class TimelineBuilder:
-    """Builds verified timelines using BAML and Qdrant."""
+    """Builds verified timelines using BAML and Qdrant with multimodal support."""
     
     def __init__(
         self,
         qdrant_client=None,
-        search_limit: int = 10
+        search_limit: int = 10,
+        use_multimodal: bool = True
     ):
         """Initialize timeline builder.
         
         Args:
             qdrant_client: QdrantClient instance
             search_limit: Default number of events to include
+            use_multimodal: Enable multimodal (image) search capabilities
         """
         self.config = get_config()
         self.client = qdrant_client
         self.searcher = HybridSearcher(qdrant_client)
         self.search_limit = search_limit
+        
+        # Initialize multimodal processor if available
+        self.use_multimodal = use_multimodal and MULTIMODAL_AVAILABLE
+        self.multimodal_processor = None
+        if self.use_multimodal:
+            try:
+                self.multimodal_processor = MultimodalTweetProcessor(
+                    qdrant_client=qdrant_client,
+                    use_clip=True
+                )
+                logger.info("Multimodal search enabled with CLIP")
+            except Exception as e:
+                logger.warning(f"Could not initialize multimodal processor: {e}")
+                self.use_multimodal = False
         
         if b is None:
             logger.warning(
@@ -286,6 +312,173 @@ class TimelineBuilder:
         except Exception as e:
             logger.error(f"Error comparing timelines: {e}", exc_info=True)
             return None
+    
+    async def build_multimodal_timeline(
+        self,
+        query: str,
+        image_path_or_url: Optional[str] = None,
+        limit: Optional[int] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        filter_has_images: Optional[bool] = None
+    ) -> Optional[Timeline]:
+        """
+        Build a timeline using multimodal search (text + optional image).
+        
+        This enables:
+        - Searching with both text and image queries
+        - Finding visually similar content
+        - Cross-modal matching (find text matching an image)
+        
+        Args:
+            query: Text query
+            image_path_or_url: Optional image for multimodal query
+            limit: Number of events in timeline
+            filters: Additional search filters
+            filter_has_images: If True, only include tweets with images
+        
+        Returns:
+            Timeline object or None
+        """
+        if b is None:
+            error_msg = "Cannot build timeline: BAML client not available"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        if limit is None:
+            limit = self.search_limit
+        
+        logger.info(f"Building multimodal timeline for: {query}")
+        if image_path_or_url:
+            logger.info(f"  with image: {image_path_or_url[:50]}...")
+        
+        try:
+            # Step 1: Process text query
+            processed = await self._process_query(query)
+            
+            # Step 2: Retrieve context using multimodal search
+            if self.use_multimodal and self.multimodal_processor:
+                context = self._retrieve_multimodal_context(
+                    query=processed.rewritten_query,
+                    image=image_path_or_url,
+                    filters=filters,
+                    limit=limit * 3,
+                    filter_has_images=filter_has_images
+                )
+            else:
+                # Fallback to text-only search
+                context = self._retrieve_context(
+                    processed.rewritten_query,
+                    filters,
+                    limit * 3
+                )
+            
+            if not context:
+                logger.warning("No multimodal context found")
+                context = [{
+                    "text": f"No visual or textual matches found for '{query}'",
+                    "author": "system",
+                    "timestamp": "2026-01-22T00:00:00Z",
+                    "credibility_score": 0.5,
+                    "has_images": False
+                }]
+            
+            logger.info(f"Retrieved {len(context)} multimodal context items")
+            
+            # Step 3: Format context with image information
+            context_str = self._format_multimodal_context(context)
+            
+            # Step 4: Generate timeline
+            timeline = await b.GenerateTimeline(
+                query=processed.rewritten_query,
+                retrieved_context=context_str,
+                num_events=limit
+            )
+            
+            logger.info(f"Generated multimodal timeline with {len(timeline.events)} events")
+            return timeline
+            
+        except Exception as e:
+            logger.error(f"Error building multimodal timeline: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to build multimodal timeline: {str(e)}") from e
+    
+    def _retrieve_multimodal_context(
+        self,
+        query: str,
+        image: Optional[str],
+        filters: Optional[Dict[str, Any]],
+        limit: int,
+        filter_has_images: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """Retrieve context using multimodal search."""
+        if not self.multimodal_processor:
+            return self._retrieve_context(query, filters, limit)
+        
+        results = self.multimodal_processor.search_multimodal(
+            query=query,
+            query_image=image,
+            limit=limit,
+            filter_has_images=filter_has_images
+        )
+        
+        # Extract payloads with scores
+        context = []
+        for r in results:
+            payload = r.get("payload", {})
+            payload["_search_score"] = r.get("score", 0)
+            context.append(payload)
+        
+        return context
+    
+    def _format_multimodal_context(self, context: List[Dict[str, Any]]) -> str:
+        """Format multimodal context for BAML prompt with image info."""
+        formatted_items = []
+        
+        for item in context:
+            formatted = {
+                "text": item.get("text", ""),
+                "author": item.get("author_username", item.get("author", "unknown")),
+                "timestamp": item.get("timestamp", ""),
+                "credibility_score": item.get("credibility_score", 0.5),
+                "has_images": item.get("has_images", False),
+                "image_count": item.get("image_count", 0),
+                "verified": item.get("author_verified", item.get("is_verified", False)),
+            }
+            
+            # Include image captions if available
+            if item.get("image_captions"):
+                formatted["image_descriptions"] = item["image_captions"]
+            
+            # Include search relevance
+            if "_search_score" in item:
+                formatted["relevance_score"] = round(item["_search_score"], 3)
+            
+            formatted_items.append(formatted)
+        
+        return json.dumps(formatted_items, indent=2, ensure_ascii=False)
+    
+    async def search_by_image(
+        self,
+        image_path_or_url: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for tweets visually similar to an image.
+        
+        Args:
+            image_path_or_url: Path to image or URL
+            limit: Number of results
+        
+        Returns:
+            List of matching tweets
+        """
+        if not self.use_multimodal or not self.multimodal_processor:
+            logger.warning("Multimodal search not available")
+            return []
+        
+        return self.multimodal_processor.search_by_image(
+            image_path_or_url=image_path_or_url,
+            limit=limit
+        )
     
     async def _process_query(self, query: str):
         """Process query using BAML."""

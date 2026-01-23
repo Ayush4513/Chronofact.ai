@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["CredibilityAssessment","Event","KnowledgeFact","MisinformationAnalysis","ProcessedQuery","Recommendation","SessionMemory","SimpleEvent","Timeline","XPost",]
+          ["CredibilityAssessment","Event","FollowUpQuestion","KnowledgeFact","MisinformationAnalysis","ProcessedQuery","Recommendation","SessionMemory","SimpleEvent","Timeline","XPost",]
         ), enums=set(
           []
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -31,7 +31,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 10
+    # Generated classes 11
     # #########################################################################
 
     @property
@@ -41,6 +41,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def Event(self) -> "EventViewer":
         return EventViewer(self)
+
+    @property
+    def FollowUpQuestion(self) -> "FollowUpQuestionViewer":
+        return FollowUpQuestionViewer(self)
 
     @property
     def KnowledgeFact(self) -> "KnowledgeFactViewer":
@@ -82,7 +86,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
 # #########################################################################
-# Generated classes 10
+# Generated classes 11
 # #########################################################################
 
 class CredibilityAssessmentAst:
@@ -191,6 +195,57 @@ class EventProperties:
     @property
     def verified_sources(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("verified_sources"))
+    
+    
+
+
+class FollowUpQuestionAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("FollowUpQuestion")
+        self._properties: typing.Set[str] = set([  "question",  "category",  "context_hint",  "priority",  ])
+        self._props = FollowUpQuestionProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "FollowUpQuestionProperties":
+        return self._props
+
+
+class FollowUpQuestionViewer(FollowUpQuestionAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class FollowUpQuestionProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def question(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("question"))
+    
+    @property
+    def category(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("category"))
+    
+    @property
+    def context_hint(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("context_hint"))
+    
+    @property
+    def priority(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("priority"))
     
     
 

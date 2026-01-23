@@ -127,6 +127,21 @@ class BamlAsyncClient:
                 "text": text,
             })
             return typing.cast(typing.List[str], __result__.cast_to(types, types, stream_types, False, __runtime__))
+    async def GenerateFollowUpQuestions(self, original_query: str,timeline_summary: str,key_events: typing.List[str],entities_found: typing.List[str],credibility_summary: str,previous_questions: typing.Optional[typing.List[str]] = None,
+        baml_options: BamlCallOptions = {},
+    ) -> typing.List["types.FollowUpQuestion"]:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.GenerateFollowUpQuestions(original_query=original_query,timeline_summary=timeline_summary,key_events=key_events,entities_found=entities_found,credibility_summary=credibility_summary,previous_questions=previous_questions,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="GenerateFollowUpQuestions", args={
+                "original_query": original_query,"timeline_summary": timeline_summary,"key_events": key_events,"entities_found": entities_found,"credibility_summary": credibility_summary,"previous_questions": previous_questions,
+            })
+            return typing.cast(typing.List["types.FollowUpQuestion"], __result__.cast_to(types, types, stream_types, False, __runtime__))
     async def GenerateRecommendations(self, query: str,timeline: typing.Optional["types.Timeline"] = None,user_session: typing.Optional[typing.List["types.SessionMemory"]] = None,
         baml_options: BamlCallOptions = {},
     ) -> typing.List["types.Recommendation"]:
@@ -232,6 +247,18 @@ class BamlStreamClient:
           lambda x: typing.cast(typing.List[str], x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
+    def GenerateFollowUpQuestions(self, original_query: str,timeline_summary: str,key_events: typing.List[str],entities_found: typing.List[str],credibility_summary: str,previous_questions: typing.Optional[typing.List[str]] = None,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[typing.List["stream_types.FollowUpQuestion"], typing.List["types.FollowUpQuestion"]]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="GenerateFollowUpQuestions", args={
+            "original_query": original_query,"timeline_summary": timeline_summary,"key_events": key_events,"entities_found": entities_found,"credibility_summary": credibility_summary,"previous_questions": previous_questions,
+        })
+        return baml_py.BamlStream[typing.List["stream_types.FollowUpQuestion"], typing.List["types.FollowUpQuestion"]](
+          __result__,
+          lambda x: typing.cast(typing.List["stream_types.FollowUpQuestion"], x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(typing.List["types.FollowUpQuestion"], x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     def GenerateRecommendations(self, query: str,timeline: typing.Optional["types.Timeline"] = None,user_session: typing.Optional[typing.List["types.SessionMemory"]] = None,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[typing.List["stream_types.Recommendation"], typing.List["types.Recommendation"]]:
@@ -309,6 +336,13 @@ class BamlHttpRequestClient:
             "text": text,
         }, mode="request")
         return __result__
+    async def GenerateFollowUpQuestions(self, original_query: str,timeline_summary: str,key_events: typing.List[str],entities_found: typing.List[str],credibility_summary: str,previous_questions: typing.Optional[typing.List[str]] = None,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateFollowUpQuestions", args={
+            "original_query": original_query,"timeline_summary": timeline_summary,"key_events": key_events,"entities_found": entities_found,"credibility_summary": credibility_summary,"previous_questions": previous_questions,
+        }, mode="request")
+        return __result__
     async def GenerateRecommendations(self, query: str,timeline: typing.Optional["types.Timeline"] = None,user_session: typing.Optional[typing.List["types.SessionMemory"]] = None,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -364,6 +398,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ExtractEntities", args={
             "text": text,
+        }, mode="stream")
+        return __result__
+    async def GenerateFollowUpQuestions(self, original_query: str,timeline_summary: str,key_events: typing.List[str],entities_found: typing.List[str],credibility_summary: str,previous_questions: typing.Optional[typing.List[str]] = None,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="GenerateFollowUpQuestions", args={
+            "original_query": original_query,"timeline_summary": timeline_summary,"key_events": key_events,"entities_found": entities_found,"credibility_summary": credibility_summary,"previous_questions": previous_questions,
         }, mode="stream")
         return __result__
     async def GenerateRecommendations(self, query: str,timeline: typing.Optional["types.Timeline"] = None,user_session: typing.Optional[typing.List["types.SessionMemory"]] = None,

@@ -1,23 +1,28 @@
 """
 Chronofact.ai - API Module
 FastAPI endpoints for timeline generation and verification.
+Supports multimodal queries with text and images.
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Query, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
+import base64
+import io
 
 try:
     from baml_client.baml_client import b
-    from baml_client.baml_client.types import Timeline, CredibilityAssessment, MisinformationAnalysis, Recommendation
+    from baml_client.baml_client.types import Timeline, CredibilityAssessment, MisinformationAnalysis, Recommendation, FollowUpQuestion
 except ImportError:
     b = None
     Timeline = None
     CredibilityAssessment = None
     MisinformationAnalysis = None
     Recommendation = None
+    FollowUpQuestion = None
 
 from .config import get_config
 from .timeline_builder import TimelineBuilder
@@ -25,10 +30,53 @@ from .qdrant_setup import create_qdrant_client
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup
+    logger.info("Starting Chronofact.ai API...")
+    
+    config = get_config()
+    
+    # Setup Qdrant
+    app.state.qdrant_client = create_qdrant_client(config)
+    app.state.timeline_builder = TimelineBuilder(
+        app.state.qdrant_client
+    )
+    
+    # Setup multimodal embedder
+    try:
+        from .multimodal import MultimodalEmbedder
+        app.state.multimodal_embedder = MultimodalEmbedder()
+        app.state.multimodal_available = True
+        logger.info("Multimodal embedder (CLIP) loaded successfully")
+    except Exception as e:
+        logger.warning(f"Multimodal embedder not available: {e}")
+        app.state.multimodal_embedder = None
+        app.state.multimodal_available = False
+    
+    if b is None:
+        logger.warning("BAML client not available. Run: uv run baml-cli generate")
+        app.state.baml_available = False
+    else:
+        logger.info("BAML client loaded successfully")
+        app.state.baml_available = True
+    
+    logger.info("API startup complete")
+    
+    yield  # App runs here
+    
+    # Shutdown
+    logger.info("Shutting down API...")
+    # Qdrant client cleanup is automatic
+
+
 app = FastAPI(
     title="Chronofact.ai API",
     description="AI-powered fact-based news service using Qdrant and BAML",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -48,6 +96,7 @@ class QueryRequest(BaseModel):
     location: Optional[str] = Field(None, description="Filter by location")
     min_credibility: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum credibility score")
     include_media_only: bool = Field(False, description="Only include events with media")
+    image_base64: Optional[str] = Field(None, description="Base64 encoded image for multimodal search")
 
 
 class VerifyRequest(BaseModel):
@@ -65,41 +114,21 @@ class RecommendRequest(BaseModel):
     limit: int = Field(5, ge=1, le=20, description="Number of recommendations")
 
 
+class FollowUpRequest(BaseModel):
+    original_query: str = Field(..., description="The original search query")
+    timeline_topic: str = Field(..., description="Topic from the timeline")
+    events_summary: List[str] = Field(default=[], description="List of event summaries")
+    avg_credibility: float = Field(0.5, description="Average credibility score")
+    total_events: int = Field(0, description="Total number of events")
+    total_sources: int = Field(0, description="Total number of sources")
+    previous_questions: List[str] = Field(default=[], description="Previously asked questions to avoid repetition")
+
+
 class HealthResponse(BaseModel):
     status: str
     baml_available: bool
     qdrant_connected: bool
-
-
-# Initialize components on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application components."""
-    logger.info("Starting Chronofact.ai API...")
-    
-    config = get_config()
-    
-    # Setup Qdrant
-    app.state.qdrant_client = create_qdrant_client(config)
-    app.state.timeline_builder = TimelineBuilder(
-        app.state.qdrant_client
-    )
-    
-    if b is None:
-        logger.warning("BAML client not available. Run: uv run baml-cli generate")
-        app.state.baml_available = False
-    else:
-        logger.info("BAML client loaded successfully")
-        app.state.baml_available = True
-    
-    logger.info("API startup complete")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down API...")
-    # Qdrant client cleanup is automatic
+    multimodal_available: bool = False
 
 
 @app.get("/favicon.ico")
@@ -131,10 +160,13 @@ async def health_check() -> HealthResponse:
     except Exception as e:
         logger.warning(f"Qdrant health check failed: {e}")
     
+    multimodal_available = getattr(app.state, 'multimodal_available', False)
+    
     return HealthResponse(
         status="healthy" if qdrant_connected else "degraded",
         baml_available=app.state.baml_available,
-        qdrant_connected=qdrant_connected
+        qdrant_connected=qdrant_connected,
+        multimodal_available=multimodal_available
     )
 
 
@@ -142,6 +174,7 @@ async def health_check() -> HealthResponse:
 async def generate_timeline(request: QueryRequest) -> Timeline:
     """
     Generate a timeline for a given topic.
+    Supports multimodal queries with optional image input.
     
     Returns a Timeline object with chronological events and metadata.
     """
@@ -163,10 +196,36 @@ async def generate_timeline(request: QueryRequest) -> Timeline:
         if request.include_media_only:
             filters["include_media_only"] = True
         
+        # Process image if provided
+        query_image = None
+        image_context = None
+        if request.image_base64 and app.state.multimodal_available:
+            try:
+                from PIL import Image
+                
+                # Decode base64 image
+                image_data = base64.b64decode(request.image_base64)
+                query_image = Image.open(io.BytesIO(image_data))
+                
+                logger.info(f"Processing multimodal query with image ({query_image.size})")
+                
+                # Generate image description for context
+                image_context = await _analyze_image_for_timeline(query_image, request.topic)
+                
+            except Exception as e:
+                logger.warning(f"Failed to process image: {e}")
+                # Continue without image if processing fails
+        
+        # Enhance query with image context if available
+        enhanced_query = request.topic
+        if image_context:
+            enhanced_query = f"{request.topic}. Visual context: {image_context}"
+            logger.info(f"Enhanced query with image context: {enhanced_query[:100]}...")
+        
         # Generate timeline
         try:
             timeline = await builder.build_timeline(
-                query=request.topic,
+                query=enhanced_query,
                 limit=request.limit,
                 filters=filters if filters else None
             )
@@ -212,6 +271,41 @@ async def generate_timeline(request: QueryRequest) -> Timeline:
             status_code=500,
             detail=f"Error generating timeline: {error_detail}"
         )
+
+
+async def _analyze_image_for_timeline(image, topic: str) -> Optional[str]:
+    """
+    Analyze image using Gemini to extract relevant context for timeline generation.
+    """
+    try:
+        import google.generativeai as genai
+        from .config import get_config
+        
+        config = get_config()
+        genai.configure(api_key=config.google_ai.api_key)
+        
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""Analyze this image in the context of: "{topic}"
+
+Describe what you see that is relevant to the topic. Focus on:
+- Key visual elements (people, places, events, objects)
+- Any text or signs visible
+- The setting and context
+- Time indicators (day/night, weather, season)
+- Any notable actions or events happening
+
+Be concise but specific. Return only the description, no preamble."""
+
+        response = model.generate_content([prompt, image])
+        
+        if response.text:
+            return response.text.strip()[:500]  # Limit context length
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Image analysis failed: {e}")
+        return None
 
 
 @app.post("/api/verify")
@@ -301,6 +395,72 @@ async def get_recommendations(request: RecommendRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"Error generating recommendations: {str(e)}"
+        )
+
+
+@app.post("/api/followup")
+async def get_follow_up_questions(request: FollowUpRequest) -> Dict[str, Any]:
+    """
+    Generate context-aware follow-up questions based on timeline results.
+    
+    These questions help users continue their investigation with relevant,
+    intelligent follow-up queries derived from the current context.
+    """
+    if not app.state.baml_available:
+        raise HTTPException(
+            status_code=503,
+            detail="BAML client not available"
+        )
+    
+    try:
+        # Build timeline summary
+        timeline_summary = f"""
+Topic: {request.timeline_topic}
+Total Events: {request.total_events}
+Total Sources: {request.total_sources}
+Average Credibility: {request.avg_credibility:.1%}
+"""
+        
+        # Build credibility summary
+        if request.avg_credibility >= 0.7:
+            credibility_summary = f"High credibility ({request.avg_credibility:.0%}) - Most sources are verified and consistent"
+        elif request.avg_credibility >= 0.4:
+            credibility_summary = f"Moderate credibility ({request.avg_credibility:.0%}) - Some claims need verification"
+        else:
+            credibility_summary = f"Low credibility ({request.avg_credibility:.0%}) - Many unverified claims, exercise caution"
+        
+        # Extract entities from events (simple extraction)
+        entities = []
+        for event in request.events_summary[:5]:  # Limit to first 5 events
+            # Simple entity extraction from event summaries
+            words = event.split()
+            for word in words:
+                if word[0].isupper() and len(word) > 2 and word not in entities:
+                    entities.append(word)
+            if len(entities) >= 10:
+                break
+        
+        # Generate follow-up questions
+        questions = await b.GenerateFollowUpQuestions(
+            original_query=request.original_query,
+            timeline_summary=timeline_summary,
+            key_events=request.events_summary[:5],  # Limit events
+            entities_found=entities[:10],  # Limit entities
+            credibility_summary=credibility_summary,
+            previous_questions=request.previous_questions if request.previous_questions else None
+        )
+        
+        return {
+            "query": request.original_query,
+            "count": len(questions),
+            "questions": [q.model_dump() for q in questions]
+        }
+        
+    except Exception as e:
+        logger.error(f"Follow-up generation error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating follow-up questions: {str(e)}"
         )
 
 

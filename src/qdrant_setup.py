@@ -1,11 +1,11 @@
 """
 Chronofact.ai - Qdrant Setup Module
-Creates and manages Qdrant collections.
+Creates and manages Qdrant collections with multimodal vector support.
 """
 
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
-from typing import Optional
+from typing import Optional, Dict
 import logging
 
 from .config import get_config, AppConfig
@@ -13,10 +13,14 @@ from .embeddings import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
+# Vector dimensions
+TEXT_VECTOR_SIZE = 384  # all-MiniLM-L6-v2
+CLIP_VECTOR_SIZE = 512  # clip-ViT-B-32
+
 
 def setup_collections(client: Optional[QdrantClient] = None) -> QdrantClient:
     """
-    Create Qdrant collections for XTimeline.
+    Create Qdrant collections for XTimeline with multimodal support.
     
     Args:
         client: Optional QdrantClient instance. Creates new one if not provided.
@@ -30,37 +34,131 @@ def setup_collections(client: Optional[QdrantClient] = None) -> QdrantClient:
         client = create_qdrant_client(config)
     
     embedding_model = get_embedding_model()
-    vector_size = embedding_model.get_vector_size()
+    text_vector_size = embedding_model.get_vector_size()
     
-    logger.info(f"Setting up collections with vector size: {vector_size}")
+    logger.info(f"Setting up collections with text vector size: {text_vector_size}, CLIP size: {CLIP_VECTOR_SIZE}")
     
-    # Create posts collection
-    _create_collection_if_not_exists(
+    # Create posts collection with multimodal vectors
+    _create_multimodal_collection_if_not_exists(
         client,
         config.collection_posts,
-        vector_size,
-        "X posts with text, metadata, and credibility scores"
+        text_vector_size,
+        "X posts with text, images, metadata, and credibility scores"
     )
     
-    # Create knowledge facts collection
+    # Create knowledge facts collection (text-only is fine)
     _create_collection_if_not_exists(
         client,
         config.collection_knowledge,
-        vector_size,
+        text_vector_size,
         "Verified facts for timeline verification"
     )
     
-    # Create session memory collection
+    # Create session memory collection (text-only is fine)
     _create_collection_if_not_exists(
         client,
         config.collection_memory,
-        vector_size,
+        text_vector_size,
         "User query history and session memory"
     )
     
     logger.info("All collections ready")
     
     return client
+
+
+def _create_multimodal_collection_if_not_exists(
+    client: QdrantClient,
+    collection_name: str,
+    text_vector_size: int,
+    description: str
+) -> None:
+    """
+    Create a Qdrant collection with multiple named vectors for multimodal data.
+    
+    Vectors:
+        - "text": Text embedding (all-MiniLM-L6-v2, 384 dim)
+        - "multimodal": Combined text+image CLIP embedding (512 dim)
+        - "image": Image-only CLIP embedding for cross-modal search (512 dim)
+    
+    Args:
+        client: QdrantClient instance
+        collection_name: Name of the collection
+        text_vector_size: Dimension of text vectors
+        description: Collection description
+    """
+    try:
+        if client.collection_exists(collection_name):
+            logger.info(f"Collection '{collection_name}' already exists")
+            # Check if it has multimodal vectors, if not we may need to recreate
+            return
+        
+        logger.info(f"Creating multimodal collection: {collection_name}")
+        
+        # Named vectors configuration for multimodal support
+        vectors_config = {
+            "text": models.VectorParams(
+                size=text_vector_size,
+                distance=models.Distance.COSINE,
+                hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100)
+            ),
+            "multimodal": models.VectorParams(
+                size=CLIP_VECTOR_SIZE,
+                distance=models.Distance.COSINE,
+                hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100)
+            ),
+            "image": models.VectorParams(
+                size=CLIP_VECTOR_SIZE,
+                distance=models.Distance.COSINE,
+                hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100)
+            ),
+        }
+        
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=vectors_config,
+            optimizers_config=models.OptimizersConfigDiff(
+                indexing_threshold=20000
+            ),
+            replication_factor=1,
+            write_consistency_factor=1
+        )
+        
+        # Create payload indexes for efficient filtering
+        _create_payload_indexes(client, collection_name)
+        
+        logger.info(f"✓ Created multimodal collection: {collection_name}")
+        
+    except UnexpectedResponse as e:
+        logger.error(f"Error creating collection '{collection_name}': {e}")
+        raise
+
+
+def _create_payload_indexes(client: QdrantClient, collection_name: str) -> None:
+    """Create payload field indexes for efficient filtering."""
+    try:
+        # Index commonly filtered fields
+        indexed_fields = [
+            ("has_images", models.PayloadSchemaType.BOOL),
+            ("author_verified", models.PayloadSchemaType.BOOL),
+            ("credibility_score", models.PayloadSchemaType.FLOAT),
+            ("location", models.PayloadSchemaType.KEYWORD),
+            ("timestamp", models.PayloadSchemaType.DATETIME),
+        ]
+        
+        for field_name, field_type in indexed_fields:
+            try:
+                client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name=field_name,
+                    field_schema=field_type
+                )
+                logger.debug(f"Created index for field: {field_name}")
+            except Exception as e:
+                logger.debug(f"Index for {field_name} may already exist: {e}")
+                
+    except Exception as e:
+        logger.warning(f"Could not create payload indexes: {e}")
 
 
 def _create_collection_if_not_exists(
@@ -70,13 +168,13 @@ def _create_collection_if_not_exists(
     description: str
 ) -> None:
     """
-    Create a Qdrant collection if it doesn't exist.
+    Create a standard Qdrant collection if it doesn't exist.
     
     Args:
         client: QdrantClient instance
-            collection_name: Name of the collection
-            vector_size: Dimension of vectors
-            description: Collection description
+        collection_name: Name of the collection
+        vector_size: Dimension of vectors
+        description: Collection description
     """
     try:
         if client.collection_exists(collection_name):

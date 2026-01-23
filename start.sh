@@ -40,15 +40,8 @@ if ! command_exists uv; then
     export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-if ! command_exists docker; then
-    echo -e "${RED}❌ Docker is not installed. Please install Docker Desktop${NC}"
-    exit 1
-fi
-
-if ! docker info >/dev/null 2>&1; then
-    echo -e "${RED}❌ Docker is not running. Please start Docker Desktop${NC}"
-    exit 1
-fi
+# Docker check - only required for local Qdrant mode
+# Will be checked later if QDRANT_MODE=docker
 
 # Setup virtual environment
 if [ ! -d "$PROJECT_DIR/.venv" ]; then
@@ -129,6 +122,17 @@ cd "$PROJECT_DIR"
 QDRANT_MODE="${QDRANT_MODE:-cloud}"
 
 if [ "$QDRANT_MODE" = "docker" ]; then
+    # Check Docker for local mode
+    if ! command_exists docker; then
+        echo -e "${RED}❌ Docker is required for local Qdrant mode. Please install Docker Desktop or use QDRANT_MODE=cloud${NC}"
+        exit 1
+    fi
+    
+    if ! docker info >/dev/null 2>&1; then
+        echo -e "${RED}❌ Docker is not running. Please start Docker Desktop${NC}"
+        exit 1
+    fi
+    
     # Setup Qdrant Docker
     echo -e "${YELLOW}🐳 Setting up Qdrant Docker...${NC}"
     

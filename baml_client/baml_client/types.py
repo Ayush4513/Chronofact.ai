@@ -41,7 +41,7 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # #########################################################################
 
 # #########################################################################
-# Generated classes (10)
+# Generated classes (11)
 # #########################################################################
 
 class CredibilityAssessment(BaseModel):
@@ -57,6 +57,12 @@ class Event(BaseModel):
     media: typing.Optional[str] = Field(default=None, description='Optional image or video URL associated with event')
     credibility_score: float = Field(description='0.0 to 1.0, higher is more credible')
     verified_sources: int = Field(description='Number of sources verified against knowledge base')
+
+class FollowUpQuestion(BaseModel):
+    question: str = Field(description='A natural follow-up question to continue the conversation')
+    category: str = Field(description='Category: \'deep_dive\', \'related_topic\', \'verification\', \'prediction\', \'comparison\'')
+    context_hint: str = Field(description='Brief hint about what this question explores')
+    priority: int = Field(description='Priority 1-5, where 1 is most relevant')
 
 class KnowledgeFact(BaseModel):
     fact_id: str = Field(description='Unique identifier for this fact')
