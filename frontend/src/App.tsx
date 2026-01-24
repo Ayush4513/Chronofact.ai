@@ -336,10 +336,12 @@ function TimelineEventCard({
 function FollowUpQuestionsPanel({
   questions,
   loading,
+  error,
   onQuestionClick,
 }: {
   questions: FollowUpQuestion[];
   loading: boolean;
+  error?: string | null;
   onQuestionClick: (question: string) => void;
 }) {
   const getCategoryIcon = (category: string) => {
@@ -398,7 +400,44 @@ function FollowUpQuestionsPanel({
     );
   }
 
-  if (questions.length === 0) return null;
+  // Show error state
+  if (error) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="rounded-xl border border-red-500/20 bg-slate-900/50 backdrop-blur-md p-6"
+      >
+        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Lightbulb className="h-4 w-4 text-red-400" />
+          Follow-Up Questions
+        </h4>
+        <p className="text-xs text-red-400 flex items-center gap-2">
+          <XCircle className="h-3.5 w-3.5" />
+          {error}
+        </p>
+      </motion.div>
+    );
+  }
+
+  // Show empty state with message instead of hiding
+  if (questions.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="rounded-xl border border-white/10 bg-slate-900/50 backdrop-blur-md p-6"
+      >
+        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+          <Lightbulb className="h-4 w-4 text-amber-400" />
+          Continue Exploring
+        </h4>
+        <p className="text-xs text-slate-500">
+          No follow-up questions available for this query. Try a different topic!
+        </p>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -560,6 +599,7 @@ export function App() {
   const [followUpQuestions, setFollowUpQuestions] = useState<FollowUpQuestion[]>([]);
   const [questionHistory, setQuestionHistory] = useState<string[]>([]);
   const [loadingFollowUp, setLoadingFollowUp] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
 
   useEffect(() => {
     checkApiStatus();
@@ -593,6 +633,7 @@ export function App() {
     setDetectResult(null);
     setRecommendations([]);
     setFollowUpQuestions([]);
+    setFollowUpError(null);
 
     try {
       // Use default topic if only image provided
@@ -630,7 +671,9 @@ export function App() {
 
   const fetchFollowUpQuestions = async (searchQuery: string, timelineResult: Timeline) => {
     setLoadingFollowUp(true);
+    setFollowUpError(null);
     try {
+      console.log("Fetching follow-up questions for:", searchQuery);
       const response = await api.getFollowUpQuestions({
         original_query: searchQuery,
         timeline_topic: timelineResult.topic,
@@ -640,9 +683,14 @@ export function App() {
         total_sources: timelineResult.total_sources || 0,
         previous_questions: questionHistory,
       });
+      console.log("Follow-up questions response:", response);
       setFollowUpQuestions(response.questions || []);
+      if (!response.questions || response.questions.length === 0) {
+        console.warn("No follow-up questions returned from API");
+      }
     } catch (err) {
-      console.warn("Failed to fetch follow-up questions:", err);
+      console.error("Failed to fetch follow-up questions:", err);
+      setFollowUpError(err instanceof Error ? err.message : "Failed to load questions");
     } finally {
       setLoadingFollowUp(false);
     }
@@ -1102,11 +1150,12 @@ export function App() {
               </motion.div>
             )}
 
-            {/* Follow-Up Questions */}
-            {(loadingFollowUp || followUpQuestions.length > 0) && timeline && (
+            {/* Follow-Up Questions - Always show when timeline exists */}
+            {timeline && (
               <FollowUpQuestionsPanel
                 questions={followUpQuestions}
                 loading={loadingFollowUp}
+                error={followUpError}
                 onQuestionClick={handleFollowUpClick}
               />
             )}

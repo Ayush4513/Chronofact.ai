@@ -580,14 +580,22 @@ async def search_posts(
 if __name__ == "__main__":
     import uvicorn
     import os
+    import sys
     
-    # Get port from environment variable (Render uses PORT env var)
-    port = int(os.getenv("PORT", "8000"))
+    # Get port from environment variable (Render uses PORT env var, defaults to 10000)
+    port = int(os.getenv("PORT", "10000"))
+    host = "0.0.0.0"
+    
+    print("=" * 70, file=sys.stdout, flush=True)
+    print(f"🚀 CHRONOFACT.AI - Starting on {host}:{port}", file=sys.stdout, flush=True)
+    print(f"📍 PORT env var: {os.getenv('PORT', 'not set (using 10000)')}", file=sys.stdout, flush=True)
+    print("=" * 70, file=sys.stdout, flush=True)
     
     uvicorn.run(
         "src.api:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
         reload=False,  # Disable reload in production
-        log_level="info"
+        log_level="info",
+        access_log=True,
     )
