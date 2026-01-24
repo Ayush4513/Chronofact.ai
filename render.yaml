@@ -7,7 +7,7 @@ services:
     name: chronofact-api
     runtime: python
     buildCommand: pip install -r requirements.txt && pip install baml-py && baml-cli generate
-    startCommand: python start_production.py
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT
     plan: free  # Explicitly set to free tier
     envVars:
       - key: PYTHON_VERSION

@@ -298,10 +298,15 @@ function TimelineEventCard({
             </time>
           </div>
 
-          {/* Summary */}
-          <p className="text-sm text-slate-200 leading-relaxed mb-4">
-            {event.summary}
-          </p>
+          {/* Summary - Split into lines for better readability */}
+          <div className="text-sm text-slate-200 leading-relaxed mb-4 space-y-2">
+            {event.summary.split(/[.!?]+/).filter(s => s.trim()).map((sentence, i) => (
+              <p key={i} className="flex items-start gap-2">
+                <span className="text-cyan-500 mt-1">▸</span>
+                <span>{sentence.trim()}.</span>
+              </p>
+            ))}
+          </div>
 
           {/* Sources */}
           {event.sources && event.sources.length > 0 && (
@@ -600,6 +605,8 @@ export function App() {
   const [questionHistory, setQuestionHistory] = useState<string[]>([]);
   const [loadingFollowUp, setLoadingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   useEffect(() => {
     checkApiStatus();
@@ -634,6 +641,7 @@ export function App() {
     setRecommendations([]);
     setFollowUpQuestions([]);
     setFollowUpError(null);
+    setAnalysisError(null);
 
     try {
       // Use default topic if only image provided
@@ -701,15 +709,22 @@ export function App() {
   };
 
   const runAnalysis = async (searchQuery: string) => {
+    setLoadingAnalysis(true);
+    setAnalysisError(null);
     try {
+      console.log("Running analysis for:", searchQuery);
       const [detectResult, recommendationsResult] = await Promise.all([
         api.detectMisinformation({ text: searchQuery }),
         api.getRecommendations({ query: searchQuery, limit: 5 }),
       ]);
+      console.log("Analysis results:", { detectResult, recommendationsResult });
       setDetectResult(detectResult);
       setRecommendations(recommendationsResult.recommendations || []);
     } catch (err) {
-      console.warn("Analysis error:", err);
+      console.error("Analysis error:", err);
+      setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setLoadingAnalysis(false);
     }
   };
 
@@ -1117,8 +1132,8 @@ export function App() {
               </motion.div>
             )}
 
-            {/* Misinformation Detection */}
-            {detectResult && (
+            {/* Misinformation Detection - Always show when timeline exists */}
+            {timeline && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -1126,26 +1141,54 @@ export function App() {
                 className="rounded-xl border border-white/10 bg-slate-900/50 backdrop-blur-md p-6"
               >
                 <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTriangle className="h-4 w-4 text-amber-400" />
                   Risk Analysis
                 </h4>
-                <div className={cn(
-                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4",
-                  detectResult.risk_level?.toLowerCase() === "low" && "bg-emerald-500/20 text-emerald-400",
-                  detectResult.risk_level?.toLowerCase() === "medium" && "bg-amber-500/20 text-amber-400",
-                  detectResult.risk_level?.toLowerCase() === "high" && "bg-red-500/20 text-red-400"
-                )}>
-                  {detectResult.risk_level || "Unknown"} Risk
-                </div>
-                {detectResult.suspicious_patterns && detectResult.suspicious_patterns.length > 0 && (
-                  <div className="space-y-2">
-                    {detectResult.suspicious_patterns.map((pattern, i) => (
-                      <p key={i} className="text-xs text-slate-400 flex items-start gap-2">
-                        <span className="text-amber-500">•</span>
-                        {pattern}
-                      </p>
-                    ))}
+                
+                {loadingAnalysis ? (
+                  <div className="space-y-3">
+                    <div className="animate-pulse">
+                      <div className="h-6 bg-white/5 rounded-full w-24 mb-3" />
+                      <div className="h-3 bg-white/5 rounded w-full mb-2" />
+                      <div className="h-3 bg-white/5 rounded w-3/4" />
+                    </div>
+                    <p className="text-xs text-slate-500">Analyzing for misinformation...</p>
                   </div>
+                ) : analysisError ? (
+                  <div className="text-xs text-red-400 flex items-center gap-2">
+                    <XCircle className="h-3.5 w-3.5" />
+                    {analysisError}
+                  </div>
+                ) : detectResult ? (
+                  <>
+                    <div className={cn(
+                      "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4",
+                      detectResult.risk_level?.toLowerCase() === "low" && "bg-emerald-500/20 text-emerald-400",
+                      detectResult.risk_level?.toLowerCase() === "medium" && "bg-amber-500/20 text-amber-400",
+                      detectResult.risk_level?.toLowerCase() === "high" && "bg-red-500/20 text-red-400"
+                    )}>
+                      {detectResult.risk_level?.toLowerCase() === "low" && <CheckCircle2 className="h-4 w-4" />}
+                      {detectResult.risk_level?.toLowerCase() === "medium" && <AlertTriangle className="h-4 w-4" />}
+                      {detectResult.risk_level?.toLowerCase() === "high" && <XCircle className="h-4 w-4" />}
+                      {detectResult.risk_level || "Unknown"} Risk
+                    </div>
+                    {detectResult.recommendation && (
+                      <p className="text-xs text-slate-400 mb-3">{detectResult.recommendation}</p>
+                    )}
+                    {detectResult.suspicious_patterns && detectResult.suspicious_patterns.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">Patterns Found:</p>
+                        {detectResult.suspicious_patterns.map((pattern, i) => (
+                          <p key={i} className="text-xs text-slate-400 flex items-start gap-2">
+                            <span className="text-amber-500">•</span>
+                            {pattern}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">No risk analysis available</p>
                 )}
               </motion.div>
             )}
@@ -1160,8 +1203,8 @@ export function App() {
               />
             )}
 
-            {/* Recommendations */}
-            {recommendations.length > 0 && (
+            {/* Recommendations - Always show when timeline exists */}
+            {timeline && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -1169,21 +1212,34 @@ export function App() {
                 className="rounded-xl border border-white/10 bg-slate-900/50 backdrop-blur-md p-6"
               >
                 <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Lightbulb className="h-4 w-4" />
-                  Suggestions
+                  <Lightbulb className="h-4 w-4 text-purple-400" />
+                  Related Searches
                 </h4>
-                <div className="space-y-2">
-                  {recommendations.slice(0, 3).map((rec, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleFollowUpClick(rec.action)}
-                      className="w-full text-left p-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-cyan-500/30 transition-all"
-                    >
-                      <p className="text-sm text-white mb-1">{rec.action}</p>
-                      <p className="text-xs text-slate-500">{rec.reason}</p>
-                    </button>
-                  ))}
-                </div>
+                {loadingAnalysis ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="animate-pulse p-3 rounded-lg bg-white/5">
+                        <div className="h-4 bg-white/5 rounded w-3/4 mb-2" />
+                        <div className="h-3 bg-white/5 rounded w-1/2" />
+                      </div>
+                    ))}
+                  </div>
+                ) : recommendations.length > 0 ? (
+                  <div className="space-y-2">
+                    {recommendations.slice(0, 3).map((rec, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleFollowUpClick(rec.action)}
+                        className="w-full text-left p-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-purple-500/30 transition-all group"
+                      >
+                        <p className="text-sm text-white mb-1 group-hover:text-purple-300">{rec.action}</p>
+                        <p className="text-xs text-slate-500">{rec.reason}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No recommendations available</p>
+                )}
               </motion.div>
             )}
 
