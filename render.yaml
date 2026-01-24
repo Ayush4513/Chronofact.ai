@@ -8,9 +8,12 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt && pip install baml-py && baml-cli generate
     startCommand: python start_production.py
+    plan: free  # Explicitly set to free tier
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
+      - key: PORT
+        value: "10000"  # Explicitly set port
       - key: GOOGLE_API_KEY
         sync: false  # Set manually in Render dashboard
       - key: QDRANT_MODE

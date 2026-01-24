@@ -28,16 +28,17 @@ COPY baml_src/ ./baml_src/
 COPY src/ ./src/
 COPY data/ ./data/
 COPY config/ ./config/
+COPY start_production.py ./
 
 # Generate BAML client
 RUN baml-cli generate
 
-# Expose port
-EXPOSE 8000
+# Expose port (Render uses PORT env variable, defaults to 10000)
+EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Health check - use PORT env variable
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
-# Start the application
-CMD ["python", "-m", "src.api"]
+# Start the application using production script
+CMD ["python", "start_production.py"]
