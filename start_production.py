@@ -6,72 +6,76 @@ Ensures proper port binding and error handling.
 
 import os
 import sys
-import logging
 import time
 
-# Configure logging first - send to stdout for Render
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)],
-    force=True  # Override any existing logging config
-)
-logger = logging.getLogger(__name__)
+# Force immediate output flushing
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+# Print immediately to stdout (before any imports that might hang)
+print("=" * 70, flush=True)
+print("🚀 CHRONOFACT.AI - PRODUCTION STARTUP", flush=True)
+print("=" * 70, flush=True)
+
+# Get port FIRST
+port = int(os.getenv("PORT", "10000"))
+host = "0.0.0.0"
+
+print(f"📍 Will bind to: {host}:{port}", flush=True)
+print(f"🐍 Python: {sys.version.split()[0]}", flush=True)
+print(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S UTC')}", flush=True)
+print("=" * 70, flush=True)
 
 def main():
     """Start the FastAPI application with proper port binding."""
-    
-    # Get port from environment - Render sets PORT automatically
-    port = int(os.getenv("PORT", "10000"))
-    host = os.getenv("HOST", "0.0.0.0")
-    
-    logger.info("=" * 70)
-    logger.info("🚀 CHRONOFACT.AI - PRODUCTION STARTUP")
-    logger.info("=" * 70)
-    logger.info(f"📍 Binding to: {host}:{port}")
-    logger.info(f"🌍 Environment: PRODUCTION")
-    logger.info(f"🐍 Python: {sys.version.split()[0]}")
-    logger.info(f"⏰ Start time: {time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    logger.info("=" * 70)
     
     # Verify critical environment variables
     required_vars = ["GOOGLE_API_KEY", "QDRANT_URL", "QDRANT_API_KEY"]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
-        logger.warning(f"⚠️  Missing environment variables: {', '.join(missing_vars)}")
-        logger.warning("⚠️  Some features may not work properly")
+        print(f"⚠️  Missing env vars: {', '.join(missing_vars)}", flush=True)
     else:
-        logger.info("✅ All required environment variables present")
+        print("✅ All required environment variables present", flush=True)
+    
+    print("🔧 Importing uvicorn...", flush=True)
     
     try:
         import uvicorn
+        from uvicorn.config import Config
+        from uvicorn.server import Server
+        import asyncio
         
-        logger.info("🔧 Starting Uvicorn server...")
+        print("✅ Uvicorn imported successfully", flush=True)
+        print(f"🚀 Starting server on {host}:{port}...", flush=True)
+        sys.stdout.flush()
         
-        # Start uvicorn with Render-optimized configuration
-        uvicorn.run(
-            "src.api:app",
+        # Use Config + Server for more control over startup
+        config = Config(
+            app="src.api:app",
             host=host,
             port=port,
             log_level="info",
             access_log=True,
-            workers=1,  # Single worker for free tier
-            limit_concurrency=10,
-            timeout_keep_alive=75,  # Render timeout is 95s
-            forwarded_allow_ips="*",  # Trust Render's proxy headers
+            workers=1,
+            timeout_keep_alive=75,
+            lifespan="on",
         )
         
+        server = Server(config)
+        
+        # Run the server
+        asyncio.run(server.serve())
+        
     except ImportError as e:
-        logger.error(f"❌ Import error - missing dependency: {e}", exc_info=True)
-        logger.error("💡 Try: pip install uvicorn[standard]")
+        print(f"❌ Import error: {e}", flush=True)
         sys.exit(1)
     except OSError as e:
-        logger.error(f"❌ OS error - port binding failed: {e}", exc_info=True)
-        logger.error(f"💡 Port {port} may be in use or permission denied")
+        print(f"❌ OS error (port binding): {e}", flush=True)
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Failed to start server: {e}", exc_info=True)
+        print(f"❌ Failed to start: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

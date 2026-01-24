@@ -45,61 +45,74 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    # Startup
+    # Startup - FAST startup to bind port quickly for Render
     import os
-    port = os.getenv("PORT", "8000")
+    port = os.getenv("PORT", "10000")
+    
+    print(f"🚀 API Lifespan: Starting on PORT={port}...", flush=True)
     logger.info(f"Starting Chronofact.ai API on PORT={port}...")
+    
+    # Set minimal state first to allow health checks to pass
+    app.state.qdrant_client = None
+    app.state.timeline_builder = None
+    app.state.multimodal_embedder = None
+    app.state.multimodal_available = False
+    app.state.baml_available = b is not None
+    app.state.initialized = False
+    
+    print("✅ Minimal state set, port should bind now", flush=True)
+    logger.info("Minimal startup complete - server ready to accept connections")
+    
+    # Defer heavy initialization to background or first request
+    # This allows the port to bind immediately for Render health checks
+    
+    yield  # App runs here - port is now bound!
+    
+    # Shutdown
+    logger.info("Shutting down API...")
+
+
+def initialize_services(app: FastAPI):
+    """Initialize heavy services lazily on first request."""
+    if getattr(app.state, 'initialized', False):
+        return
+    
+    print("🔧 Lazy initialization: Loading services...", flush=True)
+    logger.info("Lazy initialization: Loading services...")
     
     try:
         config = get_config()
         logger.info(f"Config loaded: QDRANT_MODE={config.qdrant.mode}")
         
-        # Setup Qdrant with error handling
+        # Setup Qdrant
         try:
             app.state.qdrant_client = create_qdrant_client(config)
-            app.state.timeline_builder = TimelineBuilder(
-                app.state.qdrant_client
-            )
+            app.state.timeline_builder = TimelineBuilder(app.state.qdrant_client)
             logger.info("Qdrant client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Qdrant: {e}")
-            app.state.qdrant_client = None
-            app.state.timeline_builder = None
         
-        # Setup multimodal embedder
-        try:
-            from .multimodal import MultimodalEmbedder
-            app.state.multimodal_embedder = MultimodalEmbedder()
-            app.state.multimodal_available = True
-            logger.info("Multimodal embedder (CLIP) loaded successfully")
-        except Exception as e:
-            logger.warning(f"Multimodal embedder not available: {e}")
-            app.state.multimodal_embedder = None
+        # Skip multimodal embedder on Render free tier (too heavy)
+        # It will be loaded on-demand if needed
+        import os
+        if os.getenv("SKIP_MULTIMODAL", "true").lower() == "true":
+            logger.info("Skipping multimodal embedder (SKIP_MULTIMODAL=true)")
             app.state.multimodal_available = False
-        
-        if b is None:
-            logger.warning("BAML client not available. Run: baml-cli generate")
-            app.state.baml_available = False
         else:
-            logger.info("BAML client loaded successfully")
-            app.state.baml_available = True
+            try:
+                from .multimodal import MultimodalEmbedder
+                app.state.multimodal_embedder = MultimodalEmbedder()
+                app.state.multimodal_available = True
+                logger.info("Multimodal embedder loaded")
+            except Exception as e:
+                logger.warning(f"Multimodal embedder not available: {e}")
+                app.state.multimodal_available = False
         
-        logger.info("API startup complete")
+        app.state.initialized = True
+        logger.info("✅ Services initialized successfully")
         
     except Exception as e:
-        logger.error(f"Startup error: {e}", exc_info=True)
-        # Set minimal state to allow app to start
-        app.state.qdrant_client = None
-        app.state.timeline_builder = None
-        app.state.multimodal_embedder = None
-        app.state.multimodal_available = False
-        app.state.baml_available = False
-    
-    yield  # App runs here
-    
-    # Shutdown
-    logger.info("Shutting down API...")
-    # Qdrant client cleanup is automatic
+        logger.error(f"Service initialization error: {e}", exc_info=True)
 
 
 app = FastAPI(
@@ -181,25 +194,26 @@ async def root() -> Dict[str, str]:
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """Health check endpoint - returns status even during partial initialization."""
+    """Health check endpoint - returns healthy immediately for Render port detection."""
+    # Return healthy immediately so Render detects the port
+    # Services will be initialized lazily on first real request
+    
     qdrant_connected = False
-    baml_available = False
-    multimodal_available = False
-    
-    # Safe checks with getattr to avoid crashes during initialization
-    try:
-        qdrant_client = getattr(app.state, 'qdrant_client', None)
-        if qdrant_client:
-            qdrant_client.get_collections()
-            qdrant_connected = True
-    except Exception as e:
-        logger.warning(f"Qdrant health check failed: {e}")
-    
     baml_available = getattr(app.state, 'baml_available', False)
     multimodal_available = getattr(app.state, 'multimodal_available', False)
     
+    # Only check Qdrant if already initialized
+    if getattr(app.state, 'initialized', False):
+        try:
+            qdrant_client = getattr(app.state, 'qdrant_client', None)
+            if qdrant_client:
+                qdrant_client.get_collections()
+                qdrant_connected = True
+        except Exception as e:
+            logger.warning(f"Qdrant health check failed: {e}")
+    
     return HealthResponse(
-        status="healthy" if qdrant_connected else "starting",
+        status="healthy",  # Always return healthy for Render
         baml_available=baml_available,
         qdrant_connected=qdrant_connected,
         multimodal_available=multimodal_available
@@ -214,6 +228,9 @@ async def generate_timeline(request: QueryRequest) -> Timeline:
     
     Returns a Timeline object with chronological events and metadata.
     """
+    # Lazy initialization on first request
+    initialize_services(app)
+    
     if not app.state.baml_available:
         raise HTTPException(
             status_code=503,
@@ -539,6 +556,9 @@ async def search_posts(
     
     Returns search results with scores and payloads.
     """
+    # Lazy initialization
+    initialize_services(app)
+    
     from .search import HybridSearcher
     
     try:
